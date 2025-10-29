@@ -40,8 +40,3 @@ streamlit run app.py
 - No interactuar ni acceder a foros privados/ilegales.
 - Validar la **autenticidad** de la información antes de tomar decisiones.
 - Este demo es educativo y no sustituye un SOC ni una plataforma de TI.
-
-## Ideas de mejora
-- Conexión a feeds públicos (MISP/OTX) y normalización.
-- Scoring de confianza por fuente.
-- Exportación a PDF/imagen desde el dashboard.
