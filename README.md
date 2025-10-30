@@ -1,6 +1,35 @@
 # Dark Web / OSINT — Ransomware Monitor (Demo)
 
-Proyecto mínimo funcional para monitorear y presentar (bonito) eventos relacionados con ransomware usando **datos OSINT públicos** (o simulados).
+Proyecto mínimo funcional para monitorear y analizar **ataques reales de ransomware** usando:
+- 📰 **Datos OSINT públicos** (Google News RSS)
+- 🤖 **Análisis automático con Gemini AI**
+- 🎯 **Framework MITRE ATT&CK** para identificación de técnicas
+- 🔍 **Extracción de IoCs** (IPs, dominios, hashes)
+
+## ✨ Características Principales
+
+### 🔍 Filtrado Inteligente
+- Solo captura noticias sobre **ataques reales confirmados**
+- Filtra por palabras clave específicas (attack, breach, victim, leaked, etc.)
+- Búsquedas especializadas en grupos ransomware conocidos
+
+### 🤖 Análisis con Gemini AI
+Cada noticia puede ser analizada con Gemini 2.5 Flash para extraer:
+- 👤 Autor y fuente de la noticia
+- 🎭 Grupo/Actor de amenaza y nivel de sofisticación
+- 🏢 Víctimas (organización, sector, país)
+- 🔴 Nivel de criticidad (Crítico/Alto/Medio/Bajo)
+- 🎯 Modus operandi con mapeo a MITRE ATT&CK
+- 🔍 Indicadores de Compromiso (IPs, dominios, hashes, emails)
+- 🛡️ Soluciones y mitigación recomendadas
+- 📊 Resumen ejecutivo
+
+### 📊 Dashboard Interactivo
+- Timeline de eventos
+- Top actores de amenaza
+- Distribución por confianza
+- Filtros avanzados (fecha, actor, tipo, búsqueda)
+- Descarga de datos filtrados
 
 ## Estructura
 ```

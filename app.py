@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from analysis import cargar_eventos, resumen, top_actores, distrib_confianza, indicadores_top, eventos_por_mes
+from gemini_analyzer import analizar_noticia_completa
 from datetime import datetime
 
 st.set_page_config(page_title="Dark Web / OSINT — Ransomware Monitor", layout="wide")
@@ -35,7 +36,6 @@ actor = st.sidebar.multiselect("Actor", options=sorted(df["actor"].dropna().uniq
 conf = st.sidebar.multiselect("Confianza", options=sorted(df["confianza"].dropna().unique()))
 tipo = st.sidebar.multiselect("Tipo", options=sorted(df["tipo"].dropna().unique()))
 search = st.sidebar.text_input("Buscar en indicadores / URL", placeholder="ej. lockbit, dump, smb")
-show_links = st.sidebar.checkbox("Mostrar fuentes (en tabla expandida)", value=True)
 
 # Aplicar filtros
 df_f = df.copy()
@@ -111,25 +111,62 @@ st.write("---")
 st.subheader("Detalle de eventos")
 st.dataframe(df_f.sort_values("fecha", ascending=False).reset_index(drop=True), use_container_width=True)
 
-if show_links:
-    with st.expander("Fuentes / URLs (click para abrir)"):
-        if df_f.empty:
-            st.write("Sin resultados")
-        else:
-            for i, row in df_f.sort_values("fecha", ascending=False).iterrows():
-                url = row.get("url", "")
-                fecha = row.get("fecha")
-                actor_row = row.get("actor", "-")
-                fuente = row.get("fuente", "-")
-                tipo_row = row.get("tipo", "-")
-                confianza = row.get("confianza", "-")
-                titulo = f"**{fecha.date() if pd.notna(fecha) else ''} — {actor_row}**\nFuente: {fuente} - Tipo: {tipo_row} - Confianza: {confianza}"
-                st.markdown(titulo)
+# Análisis detallado con Gemini
+st.write("---")
+st.subheader("🔍 Análisis Detallado con Gemini AI")
+st.caption("Haz clic en 'Analizar con Gemini' para obtener información detallada de cada evento")
+
+if df_f.empty:
+    st.info("No hay eventos para analizar")
+else:
+    for i, row in df_f.sort_values("fecha", ascending=False).iterrows():
+        url = row.get("url", "")
+        fecha = row.get("fecha")
+        actor_row = row.get("actor", "-")
+        fuente = row.get("fuente", "-")
+        tipo_row = row.get("tipo", "-")
+        confianza = row.get("confianza", "-")
+        indicador = row.get("indicador", "")
+        
+        # Crear un identificador único para cada evento
+        evento_id = f"evento_{i}"
+        
+        # Card de evento
+        with st.container():
+            col_info, col_btn = st.columns([4, 1])
+            
+            with col_info:
+                st.markdown(f"**📅 {fecha.date() if pd.notna(fecha) else 'Sin fecha'}** | **🎭 Actor:** {actor_row} | **🔒 Confianza:** {confianza}")
+                st.markdown(f"*Fuente: {fuente}* | *Tipo: {tipo_row}*")
+                if str(indicador).strip():
+                    st.markdown(f"📌 Indicadores: `{indicador}`")
                 if pd.notna(url) and str(url).strip() != "":
-                    st.markdown(f"- Link: [fuente]({url})")
-                if str(row.get("indicador", "")).strip():
-                    st.markdown(f"- Indicadores: `{row.get('indicador')}`")
-                st.write("---")
+                    st.markdown(f"🔗 [Ver noticia original]({url})")
+            
+            with col_btn:
+                # Botón para analizar con Gemini
+                if st.button("🤖 Analizar", key=f"btn_{evento_id}", use_container_width=True):
+                    if pd.notna(url) and str(url).strip() != "":
+                        with st.spinner(f"Analizando con Gemini AI..."):
+                            resultado = analizar_noticia_completa(url)
+                        
+                        if resultado["success"]:
+                            st.session_state[evento_id] = resultado["analisis"]
+                        else:
+                            st.session_state[evento_id] = f"❌ Error: {resultado.get('error', 'No se pudo analizar')}"
+                    else:
+                        st.session_state[evento_id] = "❌ No hay URL disponible para analizar"
+            
+            # Mostrar el análisis si existe en session_state
+            if evento_id in st.session_state:
+                with st.expander("📊 Análisis Detallado", expanded=True):
+                    st.markdown(st.session_state[evento_id])
+                    # Botón para limpiar análisis
+                    if st.button("Cerrar análisis", key=f"close_{evento_id}"):
+                        del st.session_state[evento_id]
+                        st.rerun()
+            
+            st.divider()
 
 # Descarga de CSV filtrado
 csv = df_f.to_csv(index=False).encode("utf-8")

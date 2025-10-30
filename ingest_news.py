@@ -11,11 +11,14 @@ from dateutil import parser as dateparser
 # Config
 CSV_PATH = os.path.join("data", "eventos.csv")
 QUERIES = [
-    "LockBit",
-    "Qilin",
-    "BlackCat",
-    "ransomware",
-    "data leak",
+    "LockBit ransomware attack",
+    "Qilin ransomware attack",
+    "BlackCat ransomware attack",
+    "ransomware data breach",
+    "ransomware victim",
+    "ransomware leak site",
+    "cybercrime data exfiltration",
+    "ransomware threat actor",
 ]
 
 REPUTABLE_DOMAINS = {
@@ -29,7 +32,25 @@ REPUTABLE_DOMAINS = {
 
 TERMINOS_ACTORES = ["lockbit", "qilin", "blackcat"]
 
+# Palabras clave que indican que es un ataque real o filtración
+PALABRAS_CLAVE_ATAQUE = [
+    "attack", "breach", "victim", "infected", "encrypted", "ransomware",
+    "leaked", "stolen", "compromised", "hacked", "infiltrated", "exfiltrated",
+    "data dump", "dark web", "threat actor", "malware", "exploit",
+    "atacó", "víctima", "filtración", "comprometido", "hackeado", "robo de datos"
+]
+
 HEADER = ["fecha", "actor", "fuente", "tipo", "indicador", "url", "confianza"]
+
+
+def es_noticia_relevante(texto: str) -> bool:
+    """
+    Verifica si la noticia es realmente sobre un ataque o filtración de ransomware.
+    """
+    texto_lower = texto.lower()
+    # Debe contener al menos 2 palabras clave de ataque
+    coincidencias = sum(1 for palabra in PALABRAS_CLAVE_ATAQUE if palabra in texto_lower)
+    return coincidencias >= 2
 
 
 def build_google_news_rss(query: str) -> str:
@@ -130,6 +151,11 @@ def run():
             title = e.get("title", "").strip()
             summary = e.get("summary", "") or e.get("description", "") or ""
             text = f"{title} {summary}"
+            
+            # Filtrar: solo noticias relevantes sobre ataques reales
+            if not es_noticia_relevante(text):
+                continue
+            
             fecha = normalize_date(e)
             actor = detect_actor(text)
             tipo = detect_tipo(text)
