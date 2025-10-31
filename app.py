@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import subprocess
 import time
+import sys
 from analysis import cargar_eventos, resumen, top_actores, distrib_confianza, indicadores_top, eventos_por_mes
 from gemini_analyzer import analizar_noticia_completa
 from datetime import datetime
@@ -165,9 +166,9 @@ elif st.session_state.page == "dashboard":
         status_placeholder.info("🔄 Iniciando actualización...")
         
         try:
-            # Iniciar proceso con Python unbuffered (-u)
+            # Iniciar proceso con Python unbuffered (-u) usando sys.executable
             process = subprocess.Popen(
-                ["python", "-u", "ingest_news.py"],
+                [sys.executable, "-u", "ingest_news.py"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
