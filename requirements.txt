@@ -3,3 +3,6 @@ pandas
 feedparser
 requests
 python-dateutil
+google-generativeai
+beautifulsoup4
+python-dotenv
