@@ -194,7 +194,7 @@ def append_rows(csv_path: str, rows):
     exists = os.path.exists(csv_path)
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
     with open(csv_path, "a", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=HEADER)
+        writer = csv.DictWriter(fh, fieldnames=HEADER, quoting=csv.QUOTE_ALL)
         if not exists:
             writer.writeheader()
         for r in rows:
@@ -205,13 +205,20 @@ def run():
     existing = load_existing_urls(CSV_PATH)
     new_rows = []
     eventos_analizados_con_apis = 0
+    
+    # Imprimir total de fuentes para la barra de progreso
+    total_fuentes = len(FUENTES_RSS_DIRECTAS) + len(QUERIES)
+    print(f"PROGRESS:0/{total_fuentes}", flush=True)
 
     # 1. PROCESAR FUENTES RSS DIRECTAS (mejor calidad)
-    print("=" * 60)
-    print("📰 PROCESANDO FUENTES RSS DIRECTAS")
-    print("=" * 60)
+    print("=" * 60, flush=True)
+    print("📰 PROCESANDO FUENTES RSS DIRECTAS", flush=True)
+    print("=" * 60, flush=True)
     
+    fuente_actual = 0
     for fuente in FUENTES_RSS_DIRECTAS:
+        fuente_actual += 1
+        print(f"PROGRESS:{fuente_actual}/{total_fuentes}:Procesando {fuente['nombre']}...", flush=True)
         rss_url = fuente["url"]
         nombre = fuente["nombre"]
         keywords = fuente["keywords"]
@@ -222,6 +229,8 @@ def run():
         try:
             d = feedparser.parse(rss_url)
             count = 0
+            api_analysis_count = 0  # Contador de análisis con APIs por fuente
+            max_api_analysis_per_source = 3  # Límite de análisis por fuente
             
             for e in d.entries:
                 link = (e.get("link") or "").strip()
@@ -250,9 +259,9 @@ def run():
                 # 🔍 ANÁLISIS CON THREAT INTELLIGENCE APIs
                 threat_intel_data = None
                 
-                # Solo analizar con APIs si la confianza es BAJA o MEDIA
-                if confianza in ["baja", "media"]:
-                    print(f"   🛡️  Analizando con Threat Intel: {title[:50]}...")
+                # Solo analizar con APIs si la confianza es BAJA y no hemos superado el límite
+                if confianza == "baja" and api_analysis_count < max_api_analysis_per_source:
+                    print(f"   🛡️  Analizando con Threat Intel: {title[:50]}...", flush=True)
                     try:
                         threat_analysis = analizar_evento_con_threat_intel(link, title, summary)
                         
@@ -261,14 +270,17 @@ def run():
                         confianza = ajustar_confianza_con_threat_intel(confianza, threat_analysis)
                         
                         if confianza != confianza_original:
-                            print(f"      ⚠️  Confianza ajustada: {confianza_original} → {confianza}")
+                            print(f"      ⚠️  Confianza ajustada: {confianza_original} → {confianza}", flush=True)
                         
                         # Guardar datos de threat intel como JSON
                         threat_intel_data = json.dumps(threat_analysis, ensure_ascii=False)
                         eventos_analizados_con_apis += 1
+                        api_analysis_count += 1
+                        print(f"      ✅ Análisis completado ({eventos_analizados_con_apis} analizados en total)", flush=True)
                         
                     except Exception as e:
-                        print(f"      ❌ Error en análisis de threat intel: {e}")
+                        print(f"      ❌ Error en análisis de threat intel: {e}", flush=True)
+                        api_analysis_count += 1  # Contar también los errores
                 
                 indicador = ", ".join([t for t in [a for a in TERMINOS_ACTORES if a in text]]) or title[:100]
                 
@@ -293,17 +305,21 @@ def run():
             print(f"   ❌ Error procesando {nombre}: {e}")
     
     # 2. PROCESAR GOOGLE NEWS (backup, resolviendo redirecciones)
-    print("\n" + "=" * 60)
-    print("🔍 PROCESANDO GOOGLE NEWS (backup)")
-    print("=" * 60)
+    print("\n" + "=" * 60, flush=True)
+    print("🔍 PROCESANDO GOOGLE NEWS (backup)", flush=True)
+    print("=" * 60, flush=True)
     
     for q in QUERIES:
+        fuente_actual += 1
+        print(f"PROGRESS:{fuente_actual}/{total_fuentes}:Google News ({q[:30]}...)", flush=True)
         rss = build_google_news_rss(q)
         print(f"\n🔎 Query: {q}")
         
         try:
             d = feedparser.parse(rss)
             count = 0
+            api_analysis_count = 0  # Contador de análisis con APIs por query
+            max_api_analysis_per_source = 2  # Límite reducido para Google News
             
             for e in d.entries:
                 link_google = (e.get("link") or "").strip()
@@ -339,9 +355,9 @@ def run():
                 # 🔍 ANÁLISIS CON THREAT INTELLIGENCE APIs
                 threat_intel_data = None
                 
-                # Solo analizar con APIs si la confianza es BAJA o MEDIA
-                if confianza in ["baja", "media"]:
-                    print(f"   🛡️  Analizando con Threat Intel: {title[:50]}...")
+                # Solo analizar con APIs si la confianza es BAJA y no hemos superado el límite
+                if confianza == "baja" and api_analysis_count < max_api_analysis_per_source:
+                    print(f"   🛡️  Analizando con Threat Intel: {title[:50]}...", flush=True)
                     try:
                         threat_analysis = analizar_evento_con_threat_intel(link, title, summary)
                         
@@ -350,14 +366,17 @@ def run():
                         confianza = ajustar_confianza_con_threat_intel(confianza, threat_analysis)
                         
                         if confianza != confianza_original:
-                            print(f"      ⚠️  Confianza ajustada: {confianza_original} → {confianza}")
+                            print(f"      ⚠️  Confianza ajustada: {confianza_original} → {confianza}", flush=True)
                         
                         # Guardar datos de threat intel como JSON
                         threat_intel_data = json.dumps(threat_analysis, ensure_ascii=False)
                         eventos_analizados_con_apis += 1
+                        api_analysis_count += 1
+                        print(f"      ✅ Análisis completado ({eventos_analizados_con_apis} analizados en total)", flush=True)
                         
                     except Exception as e:
-                        print(f"      ❌ Error en análisis de threat intel: {e}")
+                        print(f"      ❌ Error en análisis de threat intel: {e}", flush=True)
+                        api_analysis_count += 1  # Contar también los errores
                 
                 indicador = ", ".join([t for t in [a for a in TERMINOS_ACTORES if a in text.lower()]]) or title[:100]
                 
@@ -382,16 +401,20 @@ def run():
             print(f"   ❌ Error procesando query: {e}")
 
     # 3. GUARDAR RESULTADOS
+    print(f"PROGRESS:{total_fuentes}/{total_fuentes}:Guardando resultados...", flush=True)
+    
     if new_rows:
         append_rows(CSV_PATH, new_rows)
-        print("\n" + "=" * 60)
-        print(f"✅ COMPLETADO: {len(new_rows)} eventos nuevos agregados")
-        print(f"🛡️  Analizados con Threat Intel APIs: {eventos_analizados_con_apis}")
-        print("=" * 60)
+        print("\n" + "=" * 60, flush=True)
+        print(f"✅ COMPLETADO: {len(new_rows)} eventos nuevos agregados", flush=True)
+        print(f"🛡️  Analizados con Threat Intel APIs: {eventos_analizados_con_apis}", flush=True)
+        print("=" * 60, flush=True)
+        print("PROGRESS:COMPLETE", flush=True)
     else:
-        print("\n" + "=" * 60)
-        print("ℹ️  No se agregaron eventos nuevos")
-        print("=" * 60)
+        print("\n" + "=" * 60, flush=True)
+        print("ℹ️  No se agregaron eventos nuevos", flush=True)
+        print("=" * 60, flush=True)
+        print("PROGRESS:COMPLETE", flush=True)
 
 
 if __name__ == "__main__":

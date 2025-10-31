@@ -201,7 +201,7 @@ def analizar_evento_con_threat_intel(url: str, titulo: str, descripcion: str = "
         else:
             resultado['recomendacion'] = "✅ URL parece limpia"
     
-    time.sleep(15)  # Rate limit de VT (4/min)
+    time.sleep(5)  # Rate limit de VT (reducido para mejorar velocidad)
     
     # 2. Extraer y analizar IPs del contenido
     texto_completo = f"{titulo} {descripcion}"
