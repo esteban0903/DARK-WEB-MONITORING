@@ -2,9 +2,15 @@ import os
 import requests
 from bs4 import BeautifulSoup
 import google.generativeai as genai
+from dotenv import load_dotenv
+
+# Cargar variables de entorno desde .env
+load_dotenv()
 
 # Configurar la API de Gemini
-GEMINI_API_KEY = "AIzaSyAgILdcUFng3HiepvL5xVMPHnd0vmckidk"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("⚠️ GEMINI_API_KEY no encontrada. Configura el archivo .env")
 genai.configure(api_key=GEMINI_API_KEY)
 
 def extraer_contenido_web(url: str, timeout: int = 10) -> str:
