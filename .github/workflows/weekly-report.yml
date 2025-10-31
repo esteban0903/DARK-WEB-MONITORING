@@ -1,0 +1,77 @@
+name: 📊 Weekly Deep Analysis Report
+
+# Ejecutar análisis profundo cada domingo a las 00:00 UTC
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Domingos a medianoche UTC
+  workflow_dispatch:  # Permite ejecución manual
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+    - name: 🔄 Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: 'pip'
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: 🔐 Create .env file
+      run: |
+        echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+        echo "VIRUSTOTAL_API_KEY=${{ secrets.VIRUSTOTAL_API_KEY }}" >> .env
+        echo "ABUSEIPDB_API_KEY=${{ secrets.ABUSEIPDB_API_KEY }}" >> .env
+        
+    - name: 📊 Generate weekly statistics
+      run: |
+        python -c "
+        import pandas as pd
+        from datetime import datetime, timedelta
+        from analysis import cargar_eventos, resumen, top_actores
+        
+        # Cargar eventos de la última semana
+        df = cargar_eventos()
+        ultima_semana = datetime.now() - timedelta(days=7)
+        df_semana = df[df['fecha'] >= ultima_semana]
+        
+        # Estadísticas
+        stats = resumen(df_semana)
+        actores = top_actores(df_semana)
+        
+        # Crear reporte
+        print('📊 REPORTE SEMANAL DE RANSOMWARE')
+        print('=' * 60)
+        print(f'📅 Período: Últimos 7 días')
+        print(f'📰 Total eventos: {stats[\"total_eventos\"]}')
+        print(f'🎭 Actores únicos: {stats[\"actores_unicos\"]}')
+        print(f'🔤 Menciones ransomware: {stats[\"menciones_ransomware\"]}')
+        print()
+        print('👥 TOP 5 ACTORES MÁS ACTIVOS:')
+        for idx, row in actores.head(5).iterrows():
+            print(f'  {idx+1}. {row[\"actor\"]}: {row[\"conteo\"]} eventos')
+        " | tee weekly_report.txt
+        
+    - name: 📝 Upload weekly report
+      uses: actions/upload-artifact@v4
+      with:
+        name: weekly-report-${{ github.run_number }}
+        path: weekly_report.txt
+        retention-days: 30
+        
+    - name: 📊 Create summary
+      run: |
+        echo "## 📊 Weekly Ransomware Intelligence Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🗓️ Period: Last 7 days" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        cat weekly_report.txt >> $GITHUB_STEP_SUMMARY

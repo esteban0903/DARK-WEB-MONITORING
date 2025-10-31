@@ -1,0 +1,114 @@
+name: 🤖 Weekly Ransomware News Ingestion
+
+# Ejecutar automáticamente cada LUNES a las 8:00 AM UTC
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Lunes a las 8 AM UTC
+  workflow_dispatch:  # Permite ejecución manual desde GitHub UI
+    inputs:
+      skip_threat_intel:
+        description: 'Skip threat intelligence analysis (faster)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  ingest-news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45  # Límite de tiempo para no gastar mucha cuota de APIs
+    
+    steps:
+    - name: 🔄 Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Necesario para git commit
+        
+    - name: 🐍 Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: 'pip'  # Cachear dependencias para velocidad
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: 🔐 Create .env file from GitHub Secrets
+      run: |
+        echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+        echo "VIRUSTOTAL_API_KEY=${{ secrets.VIRUSTOTAL_API_KEY }}" >> .env
+        echo "ABUSEIPDB_API_KEY=${{ secrets.ABUSEIPDB_API_KEY }}" >> .env
+        echo "✅ .env file created successfully"
+        
+    - name: 📰 Run news ingestion
+      id: ingest
+      run: |
+        echo "🚀 Starting news ingestion..."
+        python ingest_news.py 2>&1 | tee ingest_log.txt
+        echo "status=success" >> $GITHUB_OUTPUT
+      continue-on-error: true
+      
+    - name: � Check for new events
+      id: check_changes
+      run: |
+        if git diff --quiet data/eventos.csv; then
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+          echo "ℹ️  No new events found"
+        else
+          NEW_EVENTS=$(git diff data/eventos.csv | grep "^+" | grep -v "^+++" | wc -l)
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "new_events_count=$NEW_EVENTS" >> $GITHUB_OUTPUT
+          echo "✅ Found $NEW_EVENTS new events"
+        fi
+        
+    - name: �💾 Commit updated data
+      if: steps.check_changes.outputs.has_changes == 'true'
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add data/eventos.csv
+        
+        TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
+        NEW_COUNT="${{ steps.check_changes.outputs.new_events_count }}"
+        
+        git commit -m "🤖 Auto-update: $NEW_COUNT new ransomware events
+
+        📅 Timestamp: $TIMESTAMP
+        🔍 Workflow: ${{ github.workflow }}
+        🌐 Run: ${{ github.run_number }}"
+        
+    - name: 🚀 Push changes to repository
+      if: steps.check_changes.outputs.has_changes == 'true'
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
+        
+    - name: 📝 Upload ingestion logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ingestion-logs-${{ github.run_number }}
+        path: ingest_log.txt
+        retention-days: 7
+        
+    - name: 📊 Summary
+      if: always()
+      run: |
+        echo "## 📊 Ingestion Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.check_changes.outputs.has_changes }}" == "true" ]; then
+          echo "✅ **Status:** Success" >> $GITHUB_STEP_SUMMARY
+          echo "📰 **New Events:** ${{ steps.check_changes.outputs.new_events_count }}" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "ℹ️  **Status:** No new events found" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🕐 **Timestamp:** $(date -u +"%Y-%m-%d %H:%M UTC")" >> $GITHUB_STEP_SUMMARY
+        echo "🔄 **Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
