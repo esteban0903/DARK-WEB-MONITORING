@@ -3,13 +3,50 @@ import os
 import time
 from urllib.parse import urlparse, quote_plus
 from datetime import datetime
+import json
 
 import feedparser
 import requests
 from dateutil import parser as dateparser
 
+# Importar el nuevo sistema de confianza
+from confidence_scorer import calcular_confianza
+# Importar threat intelligence APIs
+from threat_intel_apis import analizar_evento_con_threat_intel, ajustar_confianza_con_threat_intel
+
 # Config
 CSV_PATH = os.path.join("data", "eventos.csv")
+
+# Fuentes RSS directas de ciberseguridad
+FUENTES_RSS_DIRECTAS = [
+    {
+        "url": "https://www.bleepingcomputer.com/feed/",
+        "nombre": "BleepingComputer",
+        "keywords": ["ransomware", "data breach", "cybercrime", "threat actor", "leak"]
+    },
+    {
+        "url": "https://thehackernews.com/feeds/posts/default",
+        "nombre": "The Hacker News",
+        "keywords": ["ransomware", "breach", "malware", "cybercrime"]
+    },
+    {
+        "url": "https://www.darkreading.com/rss.xml",
+        "nombre": "Dark Reading",
+        "keywords": ["ransomware", "attack", "breach", "threat"]
+    },
+    {
+        "url": "https://www.securityweek.com/feed/",
+        "nombre": "SecurityWeek",
+        "keywords": ["ransomware", "breach", "attack", "cybercrime"]
+    },
+    {
+        "url": "https://www.cyberscoop.com/feed/",
+        "nombre": "CyberScoop",
+        "keywords": ["ransomware", "breach", "hack"]
+    },
+]
+
+# Queries para Google News (backup)
 QUERIES = [
     "LockBit ransomware attack",
     "Qilin ransomware attack",
@@ -40,7 +77,24 @@ PALABRAS_CLAVE_ATAQUE = [
     "atacó", "víctima", "filtración", "comprometido", "hackeado", "robo de datos"
 ]
 
-HEADER = ["fecha", "actor", "fuente", "tipo", "indicador", "url", "confianza"]
+HEADER = ["fecha", "actor", "fuente", "tipo", "indicador", "url", "confianza", "threat_intel"]
+
+
+def resolver_url_real(url: str, timeout: int = 10) -> str:
+    """
+    Resuelve redirecciones de Google News y otros acortadores para obtener el URL real.
+    """
+    try:
+        # Si es un URL de Google News, seguir la redirección
+        if "news.google.com" in url:
+            response = requests.head(url, allow_redirects=True, timeout=timeout)
+            return response.url
+        # Para otros URLs, también resolver por si acaso
+        response = requests.head(url, allow_redirects=True, timeout=timeout)
+        return response.url
+    except Exception as e:
+        print(f"⚠️ No se pudo resolver redirección de {url}: {e}")
+        return url  # Devolver el original si falla
 
 
 def es_noticia_relevante(texto: str) -> bool:
@@ -89,6 +143,9 @@ def detect_tipo(text: str) -> str:
 
 
 def detect_confianza_from_domain(domain: str) -> str:
+    """
+    DEPRECADO: Ahora usamos confidence_scorer.calcular_confianza()
+    """
     if not domain:
         return "media"
     for d, conf in REPUTABLE_DOMAINS.items():
@@ -98,6 +155,14 @@ def detect_confianza_from_domain(domain: str) -> str:
     if "blog" in domain or "medium.com" in domain:
         return "media"
     return "baja"
+
+
+def calcular_confianza_evento(url: str, titulo: str, descripcion: str = "") -> str:
+    """
+    Calcula la confianza usando el sistema multi-factor.
+    """
+    resultado = calcular_confianza(url, titulo, descripcion)
+    return resultado['nivel']
 
 
 def url_is_accessible(url: str, timeout: int = 6) -> bool:
@@ -139,55 +204,194 @@ def append_rows(csv_path: str, rows):
 def run():
     existing = load_existing_urls(CSV_PATH)
     new_rows = []
+    eventos_analizados_con_apis = 0
 
+    # 1. PROCESAR FUENTES RSS DIRECTAS (mejor calidad)
+    print("=" * 60)
+    print("📰 PROCESANDO FUENTES RSS DIRECTAS")
+    print("=" * 60)
+    
+    for fuente in FUENTES_RSS_DIRECTAS:
+        rss_url = fuente["url"]
+        nombre = fuente["nombre"]
+        keywords = fuente["keywords"]
+        
+        print(f"\n🔍 Consultando: {nombre}")
+        print(f"   URL: {rss_url}")
+        
+        try:
+            d = feedparser.parse(rss_url)
+            count = 0
+            
+            for e in d.entries:
+                link = (e.get("link") or "").strip()
+                if not link or link in existing:
+                    continue
+                
+                title = e.get("title", "").strip()
+                summary = e.get("summary", "") or e.get("description", "") or ""
+                text = f"{title} {summary}".lower()
+                
+                # Verificar si contiene keywords relevantes
+                if not any(kw in text for kw in keywords):
+                    continue
+                
+                # Filtrar: solo noticias relevantes sobre ataques reales
+                if not es_noticia_relevante(text):
+                    continue
+                
+                fecha = normalize_date(e)
+                actor = detect_actor(text)
+                tipo = detect_tipo(text)
+                
+                # Calcular confianza con el nuevo sistema
+                confianza = calcular_confianza_evento(link, title, summary)
+                
+                # 🔍 ANÁLISIS CON THREAT INTELLIGENCE APIs
+                threat_intel_data = None
+                
+                # Solo analizar con APIs si la confianza es BAJA o MEDIA
+                if confianza in ["baja", "media"]:
+                    print(f"   🛡️  Analizando con Threat Intel: {title[:50]}...")
+                    try:
+                        threat_analysis = analizar_evento_con_threat_intel(link, title, summary)
+                        
+                        # Ajustar confianza según el análisis
+                        confianza_original = confianza
+                        confianza = ajustar_confianza_con_threat_intel(confianza, threat_analysis)
+                        
+                        if confianza != confianza_original:
+                            print(f"      ⚠️  Confianza ajustada: {confianza_original} → {confianza}")
+                        
+                        # Guardar datos de threat intel como JSON
+                        threat_intel_data = json.dumps(threat_analysis, ensure_ascii=False)
+                        eventos_analizados_con_apis += 1
+                        
+                    except Exception as e:
+                        print(f"      ❌ Error en análisis de threat intel: {e}")
+                
+                indicador = ", ".join([t for t in [a for a in TERMINOS_ACTORES if a in text]]) or title[:100]
+                
+                row = {
+                    "fecha": fecha,
+                    "actor": actor,
+                    "fuente": f"{nombre}",
+                    "tipo": tipo,
+                    "indicador": indicador,
+                    "url": link,
+                    "confianza": confianza,
+                    "threat_intel": threat_intel_data or "",
+                }
+                new_rows.append(row)
+                existing.add(link)
+                count += 1
+                time.sleep(0.1)
+            
+            print(f"   ✅ {count} nuevas noticias de {nombre}")
+            
+        except Exception as e:
+            print(f"   ❌ Error procesando {nombre}: {e}")
+    
+    # 2. PROCESAR GOOGLE NEWS (backup, resolviendo redirecciones)
+    print("\n" + "=" * 60)
+    print("🔍 PROCESANDO GOOGLE NEWS (backup)")
+    print("=" * 60)
+    
     for q in QUERIES:
         rss = build_google_news_rss(q)
-        print(f"Consultando: {rss}")
-        d = feedparser.parse(rss)
-        for e in d.entries:
-            link = (e.get("link") or "").strip()
-            if not link or link in existing:
-                continue
-            title = e.get("title", "").strip()
-            summary = e.get("summary", "") or e.get("description", "") or ""
-            text = f"{title} {summary}"
+        print(f"\n🔎 Query: {q}")
+        
+        try:
+            d = feedparser.parse(rss)
+            count = 0
             
-            # Filtrar: solo noticias relevantes sobre ataques reales
-            if not es_noticia_relevante(text):
-                continue
+            for e in d.entries:
+                link_google = (e.get("link") or "").strip()
+                if not link_google:
+                    continue
+                
+                # RESOLVER REDIRECCIÓN para obtener URL real
+                link = resolver_url_real(link_google)
+                
+                if link in existing:
+                    continue
+                
+                title = e.get("title", "").strip()
+                summary = e.get("summary", "") or e.get("description", "") or ""
+                text = f"{title} {summary}"
+                
+                # Filtrar: solo noticias relevantes sobre ataques reales
+                if not es_noticia_relevante(text):
+                    continue
+                
+                fecha = normalize_date(e)
+                actor = detect_actor(text)
+                tipo = detect_tipo(text)
+                
+                # Calcular confianza con el nuevo sistema
+                confianza = calcular_confianza_evento(link, title, summary)
+                
+                # Verificar accesibilidad de la URL
+                ok = url_is_accessible(link)
+                if not ok:
+                    confianza = "baja"
+                
+                # 🔍 ANÁLISIS CON THREAT INTELLIGENCE APIs
+                threat_intel_data = None
+                
+                # Solo analizar con APIs si la confianza es BAJA o MEDIA
+                if confianza in ["baja", "media"]:
+                    print(f"   🛡️  Analizando con Threat Intel: {title[:50]}...")
+                    try:
+                        threat_analysis = analizar_evento_con_threat_intel(link, title, summary)
+                        
+                        # Ajustar confianza según el análisis
+                        confianza_original = confianza
+                        confianza = ajustar_confianza_con_threat_intel(confianza, threat_analysis)
+                        
+                        if confianza != confianza_original:
+                            print(f"      ⚠️  Confianza ajustada: {confianza_original} → {confianza}")
+                        
+                        # Guardar datos de threat intel como JSON
+                        threat_intel_data = json.dumps(threat_analysis, ensure_ascii=False)
+                        eventos_analizados_con_apis += 1
+                        
+                    except Exception as e:
+                        print(f"      ❌ Error en análisis de threat intel: {e}")
+                
+                indicador = ", ".join([t for t in [a for a in TERMINOS_ACTORES if a in text.lower()]]) or title[:100]
+                
+                row = {
+                    "fecha": fecha,
+                    "actor": actor,
+                    "fuente": "Google News",
+                    "tipo": tipo,
+                    "indicador": indicador,
+                    "url": link,
+                    "confianza": confianza,
+                    "threat_intel": threat_intel_data or "",
+                }
+                new_rows.append(row)
+                existing.add(link)
+                count += 1
+                time.sleep(0.2)  # Más lento para no saturar
             
-            fecha = normalize_date(e)
-            actor = detect_actor(text)
-            tipo = detect_tipo(text)
-            dominio = urlparse(link).netloc.lower()
-            confianza = detect_confianza_from_domain(dominio)
+            print(f"   ✅ {count} nuevas noticias")
+            
+        except Exception as e:
+            print(f"   ❌ Error procesando query: {e}")
 
-            # Verificar accesibilidad de la URL; si no accesible, marcar confianza baja
-            ok = url_is_accessible(link)
-            if not ok:
-                confianza = "baja"
-
-            indicador = ", ".join([t for t in [a for a in TERMINOS_ACTORES if a in text.lower()]]) or title
-
-            row = {
-                "fecha": fecha,
-                "actor": actor,
-                "fuente": "noticia pública",
-                "tipo": tipo,
-                "indicador": indicador,
-                "url": link,
-                "confianza": confianza,
-            }
-            new_rows.append(row)
-            existing.add(link)
-            # evitar sobrecarga en queries
-            time.sleep(0.1)
-
+    # 3. GUARDAR RESULTADOS
     if new_rows:
         append_rows(CSV_PATH, new_rows)
-        print(f"Agregados {len(new_rows)} eventos nuevos.")
+        print("\n" + "=" * 60)
+        print(f"✅ COMPLETADO: {len(new_rows)} eventos nuevos agregados")
+        print(f"🛡️  Analizados con Threat Intel APIs: {eventos_analizados_con_apis}")
+        print("=" * 60)
     else:
-        print("No se agregaron eventos nuevos.")
+        print("\n" + "=" * 60)
+        print("ℹ️  No se agregaron eventos nuevos")
+        print("=" * 60)
 
 
 if __name__ == "__main__":
