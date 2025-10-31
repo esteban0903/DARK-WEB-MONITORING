@@ -13,15 +13,30 @@ if not GEMINI_API_KEY:
     raise ValueError("⚠️ GEMINI_API_KEY no encontrada. Configura el archivo .env")
 genai.configure(api_key=GEMINI_API_KEY)
 
-def extraer_contenido_web(url: str, timeout: int = 10) -> str:
+def extraer_contenido_web(url: str, timeout: int = 5) -> str:
     """
     Extrae el contenido de texto de una URL usando BeautifulSoup.
     """
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none'
         }
-        response = requests.get(url, headers=headers, timeout=timeout)
+        response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+        
+        # Si obtenemos 403, intentamos con un user agent diferente
+        if response.status_code == 403:
+            headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'
+            response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+        
         response.raise_for_status()
         
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -33,8 +48,14 @@ def extraer_contenido_web(url: str, timeout: int = 10) -> str:
         # Obtener texto
         texto = soup.get_text(separator=' ', strip=True)
         
-        # Limitar a los primeros 15000 caracteres para obtener más contexto
-        return texto[:15000]
+        # Limitar a 8000 caracteres (reducido para análisis más rápido)
+        return texto[:8000]
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 403:
+            return f"⚠️ Acceso denegado (403 Forbidden) - El sitio web bloqueó el acceso automatizado. Análisis basado solo en título y descripción disponible."
+        return f"Error HTTP {e.response.status_code}: {str(e)}"
+    except requests.exceptions.Timeout:
+        return f"⚠️ Timeout - El sitio web tardó demasiado en responder. Análisis basado solo en URL."
     except Exception as e:
         return f"Error al extraer contenido: {str(e)}"
 
@@ -44,8 +65,14 @@ def analizar_con_gemini(url: str, contenido: str) -> dict:
     Analiza el contenido de una noticia usando Gemini y extrae información estructurada.
     """
     try:
-        # Usar Gemini 2.5 Flash (modelo estable y rápido)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        # Usar Gemini 2.5 Flash con configuración de timeout
+        model = genai.GenerativeModel(
+            'gemini-2.5-flash',
+            generation_config={
+                'temperature': 0.3,
+                'max_output_tokens': 2048,  # Limitar salida para respuestas más rápidas
+            }
+        )
         
         prompt = f"""
 Eres un analista experto en ciberseguridad especializado en ransomware y ataques de amenazas avanzadas (APT).
@@ -212,12 +239,10 @@ def analizar_noticia_completa(url: str) -> dict:
     """
     contenido = extraer_contenido_web(url)
     
-    if contenido.startswith("Error"):
-        return {
-            "success": False,
-            "error": contenido,
-            "analisis": "No se pudo extraer el contenido de la página"
-        }
+    # Si hay error de extracción pero queremos analizar igual
+    if contenido.startswith("Error") or contenido.startswith("⚠️"):
+        # Analizar solo con la URL y mensaje de error
+        return analizar_con_gemini(url, f"⚠️ No se pudo acceder al contenido completo del artículo.\n\nMotivo: {contenido}\n\nPor favor, realiza un análisis basado únicamente en la URL y lo que puedas inferir de ella. Indica claramente que el análisis es limitado debido a restricciones de acceso.")
     
     resultado = analizar_con_gemini(url, contenido)
     return resultado

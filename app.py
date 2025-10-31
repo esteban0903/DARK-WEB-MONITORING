@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import subprocess
+import time
 from analysis import cargar_eventos, resumen, top_actores, distrib_confianza, indicadores_top, eventos_por_mes
 from gemini_analyzer import analizar_noticia_completa
 from datetime import datetime
@@ -15,6 +16,8 @@ if "eventos_por_pagina" not in st.session_state:
     st.session_state.eventos_por_pagina = 10
 if "pagina_actual" not in st.session_state:
     st.session_state.pagina_actual = 0
+if "show_delete_confirmation" not in st.session_state:
+    st.session_state.show_delete_confirmation = False
 
 def ir_a_detalle(evento_data):
     st.session_state.selected_event = evento_data
@@ -152,26 +155,111 @@ elif st.session_state.page == "dashboard":
     # Botón de actualización de noticias
     st.sidebar.markdown("### 🔄 Actualizar Datos")
     if st.sidebar.button("📰 Actualizar Noticias", type="primary", use_container_width=True, help="Ejecuta ingest_news.py para obtener nuevos eventos"):
-        with st.spinner("🔄 Obteniendo noticias... Esto puede tardar varios minutos"):
-            try:
-                import subprocess
-                result = subprocess.run(
-                    ["python", "ingest_news.py"],
-                    capture_output=True,
-                    text=True,
-                    timeout=600  # 10 minutos máximo
-                )
+        
+        # Crear placeholders para el progreso
+        progress_placeholder = st.sidebar.empty()
+        status_placeholder = st.sidebar.empty()
+        
+        # Mostrar estado inicial
+        progress_placeholder.progress(0)
+        status_placeholder.info("🔄 Iniciando actualización...")
+        
+        try:
+            # Iniciar proceso con Python unbuffered (-u)
+            process = subprocess.Popen(
+                ["python", "-u", "ingest_news.py"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            total_fuentes = 0
+            fuente_actual = 0
+            
+            # Leer output en tiempo real
+            for line in process.stdout:
+                line = line.strip()
                 
-                if result.returncode == 0:
-                    st.sidebar.success("✅ Noticias actualizadas exitosamente")
-                    st.sidebar.info("🔄 Recargando página...")
+                # Detectar líneas de progreso (formato: PROGRESS:actual/total:descripción)
+                if line.startswith("PROGRESS:"):
+                    parts = line.replace("PROGRESS:", "").split(":", 1)
+                    
+                    if parts[0] == "COMPLETE":
+                        progress_placeholder.progress(100)
+                        status_placeholder.success("✅ Noticias actualizadas exitosamente")
+                        break
+                    else:
+                        # Parsear progreso
+                        progress_parts = parts[0].split("/")
+                        if len(progress_parts) == 2:
+                            fuente_actual = int(progress_parts[0])
+                            total_fuentes = int(progress_parts[1])
+                            
+                            # Calcular porcentaje
+                            if total_fuentes > 0:
+                                progreso = int((fuente_actual / total_fuentes) * 100)
+                                progress_placeholder.progress(progreso)
+                                
+                                # Mostrar descripción si existe
+                                if len(parts) > 1:
+                                    status_placeholder.info(f"🔄 {parts[1]} ({fuente_actual}/{total_fuentes})")
+                                else:
+                                    status_placeholder.info(f"🔄 Procesando... ({fuente_actual}/{total_fuentes})")
+            
+            # Esperar a que termine
+            process.wait(timeout=600)
+            
+            if process.returncode == 0:
+                status_placeholder.success("✅ Noticias actualizadas exitosamente")
+                time.sleep(2)
+                st.rerun()
+            else:
+                stderr = process.stderr.read()
+                status_placeholder.error(f"❌ Error al actualizar: {stderr[:200]}")
+                
+        except subprocess.TimeoutExpired:
+            status_placeholder.warning("⏱️ La actualización está tomando mucho tiempo. Continúa en segundo plano.")
+        except Exception as e:
+            status_placeholder.error(f"❌ Error: {str(e)}")
+    
+    # Botón de borrar base de datos
+    st.sidebar.markdown("")
+    if st.sidebar.button("🗑️ Borrar Todos los Eventos", use_container_width=True, help="⚠️ Elimina TODOS los eventos de la base de datos"):
+        st.session_state.show_delete_confirmation = True
+    
+    # Diálogo de confirmación de borrado
+    if st.session_state.show_delete_confirmation:
+        st.sidebar.error("⚠️ **¿ESTÁS SEGURO?**")
+        st.sidebar.warning("Esta acción eliminará TODOS los eventos de la base de datos.")
+        
+        col1, col2 = st.sidebar.columns(2)
+        
+        with col1:
+            if st.button("✅ Sí, borrar", type="primary", use_container_width=True):
+                try:
+                    import os
+                    
+                    csv_path = "data/eventos.csv"
+                    
+                    # Crear nuevo CSV vacío
+                    with open(csv_path, 'w', encoding='utf-8') as f:
+                        f.write("fecha,actor,fuente,tipo,indicador,url,confianza,threat_intel\n")
+                    
+                    st.sidebar.success("✅ Todos los eventos han sido eliminados")
+                    st.session_state.show_delete_confirmation = False
+                    time.sleep(1)
                     st.rerun()
-                else:
-                    st.sidebar.error(f"❌ Error al actualizar: {result.stderr[:200]}")
-            except subprocess.TimeoutExpired:
-                st.sidebar.warning("⏱️ La actualización está tomando mucho tiempo. Continúa en segundo plano.")
-            except Exception as e:
-                st.sidebar.error(f"❌ Error: {str(e)}")
+                    
+                except Exception as e:
+                    st.sidebar.error(f"❌ Error al borrar: {str(e)}")
+                    st.session_state.show_delete_confirmation = False
+        
+        with col2:
+            if st.button("❌ Cancelar", use_container_width=True):
+                st.session_state.show_delete_confirmation = False
+                st.rerun()
     
     st.sidebar.markdown("---")
     
@@ -203,6 +291,9 @@ elif st.session_state.page == "dashboard":
     
     if isinstance(date_range, tuple) and len(date_range) == 2:
         start, end = date_range
+        # Asegurar que la columna fecha es datetime
+        if not pd.api.types.is_datetime64_any_dtype(df_f["fecha"]):
+            df_f["fecha"] = pd.to_datetime(df_f["fecha"], errors='coerce')
         df_f = df_f[(df_f["fecha"].dt.date >= start) & (df_f["fecha"].dt.date <= end)]
     if actor:
         df_f = df_f[df_f["actor"].isin(actor)]
