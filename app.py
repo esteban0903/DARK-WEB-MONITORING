@@ -468,6 +468,7 @@ elif st.session_state.page == "dashboard":
             }
             conf_key = str(row["confianza"]).lower()
             colors = conf_colors.get(conf_key, {"bg": "#f3f4f6", "border": "#6b7280", "text": "#374151"})
+            confianza_display = str(row["confianza"]).upper() if pd.notna(row["confianza"]) else "N/A"
             
             # Card con diseño mejorado
             st.markdown(f"""
@@ -492,7 +493,7 @@ elif st.session_state.page == "dashboard":
                                     font-weight: 600;
                                     border: 1px solid {colors['border']};
                                 ">
-                                    🎯 {row["confianza"].upper()}
+                                    🎯 {confianza_display}
                                 </span>
                                 <span style="color: #64748b; font-size: 13px; font-weight: 500;">
                                     📅 {fecha_display}
