@@ -8,9 +8,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configurar la API de Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Intentar obtener de secrets de Streamlit primero, luego de .env
+try:
+    import streamlit as st
+    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
+except:
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 if not GEMINI_API_KEY:
-    raise ValueError("⚠️ GEMINI_API_KEY no encontrada. Configura el archivo .env")
+    raise ValueError("⚠️ GEMINI_API_KEY no encontrada. Configura el archivo .env o Streamlit secrets")
 genai.configure(api_key=GEMINI_API_KEY)
 
 def extraer_contenido_web(url: str, timeout: int = 5) -> str:
@@ -74,154 +80,135 @@ def analizar_con_gemini(url: str, contenido: str) -> dict:
             }
         )
         
-        prompt = f"""
-Eres un analista experto en ciberseguridad especializado en ransomware y ataques de amenazas avanzadas (APT).
-Analiza el siguiente contenido de una noticia sobre un incidente de ransomware/ciberseguridad y extrae la siguiente información estructurada de forma PRECISA Y TÉCNICA.
+        prompt = f"""Eres un analista experto en ciberseguridad especializado en ransomware y ataques APT.
 
-IMPORTANTE: 
-- Si algún dato no está disponible en el contenido, indica "No especificado" o "No disponible en la fuente".
-- Usa el framework MITRE ATT&CK para identificar técnicas y tácticas cuando sea posible.
-- Sé específico y técnico en tu análisis.
+Analiza el siguiente contenido y extrae SOLO la información que esté EXPLÍCITAMENTE mencionada. Si un dato NO aparece en el texto, escribe "No especificado".
 
 URL: {url}
 
-CONTENIDO DE LA NOTICIA:
+CONTENIDO:
 {contenido}
 
 ---
 
-Por favor, proporciona la información en el siguiente formato ESTRUCTURADO:
+Proporciona el análisis en este formato EXACTO:
 
 ## 📰 INFORMACIÓN DE LA FUENTE
-**Autor/Medio:** [Nombre del autor o medio de comunicación]
-**Fecha de publicación:** [Fecha si está disponible]
+**Autor/Medio:** [nombre del medio]
+**Fecha:** [fecha de publicación]
 
----
-
-## 🎭 GRUPO/ACTOR DE AMENAZA
-**Nombre:** [Nombre del grupo ransomware o actor (ej: LockBit, BlackCat, Qilin)]
-**Alias conocidos:** [Otros nombres con los que se conoce al grupo]
+## 🎭 ACTOR DE AMENAZA
+**Nombre:** [grupo ransomware identificado: LockBit, BlackCat, RansomHub, etc.]
 **Nivel de sofisticación:** [Bajo/Medio/Alto/Muy Alto]
 
----
+## 🎯 VÍCTIMA
+**Organización:** [nombre de la empresa/entidad afectada]
+**Sector:** [industria: salud, finanzas, tecnología, gobierno, etc.]
+**País:** [ubicación]
+**Tamaño:** [Pequeña/Mediana/Grande empresa]
 
-## 🎯 VÍCTIMA(S)
-**Organización(es) afectada(s):** [Nombre de la(s) empresa(s) o entidad(es)]
-**Sector/Industria:** [Sector económico: salud, finanzas, manufactura, gobierno, etc.]
-**País/Región:** [Ubicación geográfica]
-**Tamaño estimado:** [Pequeña/Mediana/Grande empresa]
+## 🔴 CRITICIDAD
+**Nivel:** [🔴 CRÍTICO / 🟠 ALTO / 🟡 MEDIO / 🟢 BAJO]
+**Justificación:** [1-2 líneas explicando por qué]
 
----
+**Impacto:**
+- Datos comprometidos: [tipo y cantidad si se menciona]
+- Sistemas afectados: [descripción breve]
+- Rescate demandado: [monto si se conoce]
 
-## 🔴 NIVEL DE CRITICIDAD
-**Clasificación:** [🔴 CRÍTICO / 🟠 ALTO / 🟡 MEDIO / 🟢 BAJO]
+## 🛠️ MODUS OPERANDI
+**Vector inicial:** [phishing/vulnerabilidad/RDP/VPN/otro]
 
-**Justificación:** [Explicación breve del nivel de criticidad basado en: impacto, sector afectado, datos comprometidos, número de víctimas]
+**Técnicas MITRE ATT&CK detectadas:**
+- Initial Access: [técnica]
+- Execution: [técnica]
+- Persistence: [técnica]
+- Lateral Movement: [técnica]
+- Exfiltration: [técnica]
+- Impact: [técnica]
 
-**Impacto estimado:**
-- Datos comprometidos: [Tipo y cantidad de datos]
-- Sistemas afectados: [Servidores, endpoints, bases de datos, etc.]
-- Tiempo de inactividad: [Si se menciona]
-- Demanda de rescate: [Monto si se conoce]
-
----
-
-## 🛠️ MODUS OPERANDI (MITRE ATT&CK)
-
-**Vector de entrada inicial:**
-[Phishing, explotación de vulnerabilidad, RDP expuesto, VPN comprometida, etc.]
-
-**Técnicas MITRE ATT&CK identificadas:**
-(Lista las tácticas y técnicas del framework MITRE ATT&CK si están mencionadas o se pueden inferir)
-
-- **[TA0001] Initial Access:** [Técnica específica - ej: T1566 Phishing]
-- **[TA0002] Execution:** [Técnica específica]
-- **[TA0003] Persistence:** [Técnica específica]
-- **[TA0005] Defense Evasion:** [Técnica específica]
-- **[TA0006] Credential Access:** [Técnica específica]
-- **[TA0008] Lateral Movement:** [Técnica específica]
-- **[TA0010] Exfiltration:** [Técnica específica - ej: T1048 Exfiltration Over C2 Channel]
-- **[TA0011] Impact:** [Técnica específica - ej: T1486 Data Encrypted for Impact]
-
-**Descripción del ataque:**
-[Narrativa secuencial de cómo se desarrolló el ataque, desde el acceso inicial hasta el cifrado/exfiltración]
-
----
+**Descripción del ataque:** [2-3 líneas describiendo la secuencia del ataque]
 
 ## 🔍 INDICADORES DE COMPROMISO (IoCs)
+**IPs sospechosas:** [lista o "No especificado"]
+**Dominios maliciosos:** [lista o "No especificado"]
+**Hashes de malware:** [MD5/SHA-256 o "No especificado"]
+**Archivos maliciosos:** [nombres o "No especificado"]
+**Otros IoCs:** [puertos/procesos/registry keys o "No especificado"]
 
-**Direcciones IP sospechosas:**
-- [Lista de IPs con formato: IP - Descripción/País/ASN si está disponible]
-- Ejemplo: 192.168.1.100 - C2 Server (Rusia, AS12345)
+## 🛡️ MITIGACIÓN
+**Acciones inmediatas:**
+1. [acción prioritaria]
+2. [acción recomendada]
+3. [acción preventiva]
 
-**Dominios maliciosos:**
-- [Lista de dominios]
+**Parches necesarios:** [CVE específico o "No especificado"]
 
-**URLs maliciosas:**
-- [Lista de URLs completas]
-
-**Hashes de archivos (malware):**
-- MD5: [hash]
-- SHA-1: [hash]
-- SHA-256: [hash]
-
-**Nombres de archivos maliciosos:**
-- [Lista de nombres de archivos]
-
-**Emails/Cuentas comprometidas:**
-- [Direcciones de email usadas en phishing o comprometidas]
-
-**Otros IoCs técnicos:**
-- Claves de registro modificadas
-- Procesos sospechosos
-- Puertos utilizados
-- Servicios comprometidos
-
----
-
-## 🛡️ SOLUCIONES Y MITIGACIÓN
-
-**Acciones inmediatas recomendadas:**
-1. [Acción específica con prioridad ALTA]
-2. [Acción específica]
-3. [Acción específica]
-
-**Parches/Actualizaciones necesarias:**
-- [CVE específico si aplica] - [Software/Sistema afectado]
-- [Actualización recomendada]
-
-**Controles de seguridad recomendados:**
-- **Detección:** [Reglas SIEM, firmas de IDS/IPS]
-- **Prevención:** [Configuraciones de firewall, segmentación de red]
-- **Respuesta:** [Procedimientos de IR, aislamiento]
-- **Recuperación:** [Backups, planes de contingencia]
-
-**Referencias a guías de seguridad:**
-- [Enlaces a CISA, NIST, o guías específicas si se mencionan]
-
----
+**Controles recomendados:**
+- Detección: [reglas SIEM/IDS]
+- Prevención: [configuraciones firewall/segmentación]
+- Respuesta: [procedimiento de IR]
 
 ## 📊 RESUMEN EJECUTIVO
-[Resumen conciso en 3-4 líneas para directivos: qué pasó, quién fue afectado, qué tan grave es, y qué hacer]
+[2-3 líneas: qué pasó, quién fue afectado, gravedad, acción requerida]
 
----
+## ⚠️ CONFIABILIDAD
+**Nivel:** [Alta/Media/Baja]
+**Razón:** [justificación breve]
 
-## 🔗 FUENTES ADICIONALES
-[Si se mencionan otras fuentes, reportes técnicos, o referencias en el artículo]
-
----
-
-## ⚠️ CONFIABILIDAD DEL ANÁLISIS
-**Nivel de confianza:** [Alta/Media/Baja]
-**Razón:** [Por qué tienes ese nivel de confianza en la información extraída]
-"""
+IMPORTANTE: Sé CONCISO y PRECISO. Extrae SOLO información presente en el texto. No inventes datos.
         
         response = model.generate_content(prompt)
-        
+
+        # Extraer texto de la respuesta de forma defensiva: la SDK puede
+        # devolver diferentes estructuras (text, candidates, message, etc.).
+        analisis_text = None
+        try:
+            # Intento directo (accesor rápido)
+            analisis_text = getattr(response, "text", None)
+
+            # Revisar candidatos si no hay .text
+            if not analisis_text:
+                candidates = getattr(response, "candidates", None)
+                if candidates:
+                    cand = candidates[0]
+                    analisis_text = getattr(cand, "text", None) or getattr(cand, "content", None) or getattr(cand, "output", None) or None
+
+            # Revisar message / content
+            if not analisis_text and hasattr(response, "message"):
+                msg = getattr(response, "message")
+                # Puede ser dict con 'content' como lista de partes
+                if isinstance(msg, dict):
+                    content = msg.get("content")
+                    if isinstance(content, list) and len(content) > 0:
+                        for part in content:
+                            if isinstance(part, dict):
+                                analisis_text = part.get("text") or part.get("content")
+                                if analisis_text:
+                                    break
+                else:
+                    # Fallback a str
+                    analisis_text = str(msg)
+
+            # Último recurso: serializar el objeto respuesta
+            if not analisis_text:
+                try:
+                    analisis_text = str(response)
+                except Exception:
+                    analisis_text = "(no se pudo extraer texto de la respuesta)"
+
+        except Exception as e:
+            analisis_text = f"Error extrayendo texto de la respuesta de Gemini: {str(e)}"
+
+        # Limitar tamaño de la respuesta devuelta al front-end
+        if isinstance(analisis_text, str) and len(analisis_text) > 20000:
+            analisis_text = analisis_text[:20000] + "\n\n...respuesta truncada..."
+
         return {
             "success": True,
-            "analisis": response.text,
-            "url": url
+            "analisis": analisis_text,
+            "url": url,
+            "_raw_response_debug": None  # campo reservado para debugging en logs (no expuesto en UI)
         }
     
     except Exception as e:
