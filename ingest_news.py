@@ -44,18 +44,60 @@ FUENTES_RSS_DIRECTAS = [
         "nombre": "CyberScoop",
         "keywords": ["ransomware", "breach", "hack"]
     },
+    {
+        "url": "https://therecord.media/feed",
+        "nombre": "The Record",
+        "keywords": ["ransomware", "breach", "cybercrime", "attack"]
+    },
+    {
+        "url": "https://krebsonsecurity.com/feed/",
+        "nombre": "Krebs on Security",
+        "keywords": ["ransomware", "breach", "cybercrime", "fraud"]
+    },
+    {
+        "url": "https://threatpost.com/feed/",
+        "nombre": "Threatpost",
+        "keywords": ["ransomware", "malware", "breach", "exploit"]
+    },
+    {
+        "url": "https://www.zdnet.com/news/rss.xml",
+        "nombre": "ZDNet Security",
+        "keywords": ["ransomware", "hack", "breach", "security"]
+    },
+    {
+        "url": "https://www.infosecurity-magazine.com/rss/news/",
+        "nombre": "Infosecurity Magazine",
+        "keywords": ["ransomware", "breach", "attack", "cybercrime"]
+    },
+    {
+        "url": "https://cybersecuritynews.com/feed/",
+        "nombre": "Cybersecurity News",
+        "keywords": ["ransomware", "breach", "malware", "attack"]
+    },
+    {
+        "url": "https://www.helpnetsecurity.com/feed/",
+        "nombre": "Help Net Security",
+        "keywords": ["ransomware", "breach", "threat", "vulnerability"]
+    },
 ]
 
 # Queries para Google News (backup)
 QUERIES = [
     "LockBit ransomware attack",
+    "BlackCat ALPHV ransomware",
     "Qilin ransomware attack",
-    "BlackCat ransomware attack",
-    "ransomware data breach",
-    "ransomware victim",
-    "ransomware leak site",
+    "Akira ransomware breach",
+    "Play ransomware victim",
+    "Royal ransomware attack",
+    "BianLian ransomware",
+    "Medusa ransomware leak",
+    "RansomHub attack",
+    "8Base ransomware",
+    "ransomware data breach 2025",
+    "ransomware victim leak site",
     "cybercrime data exfiltration",
-    "ransomware threat actor",
+    "ransomware double extortion",
+    "hospital ransomware attack",
 ]
 
 REPUTABLE_DOMAINS = {
