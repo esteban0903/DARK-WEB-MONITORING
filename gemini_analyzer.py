@@ -19,51 +19,102 @@ if not GEMINI_API_KEY:
     raise ValueError("⚠️ GEMINI_API_KEY no encontrada. Configura el archivo .env o Streamlit secrets")
 genai.configure(api_key=GEMINI_API_KEY)
 
-def extraer_contenido_web(url: str, timeout: int = 5) -> str:
+def extraer_contenido_web(url: str, timeout: int = 10) -> str:
     """
-    Extrae el contenido de texto de una URL usando BeautifulSoup.
+    Extrae el contenido de texto de una URL usando BeautifulSoup con múltiples intentos.
     """
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none'
-        }
-        response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
-        
-        # Si obtenemos 403, intentamos con un user agent diferente
-        if response.status_code == 403:
-            headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'
-            response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
-        
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Eliminar scripts y estilos
-        for script in soup(["script", "style"]):
-            script.decompose()
-        
-        # Obtener texto
-        texto = soup.get_text(separator=' ', strip=True)
-        
-        # Limitar a 8000 caracteres (reducido para análisis más rápido)
-        return texto[:8000]
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 403:
-            return f"⚠️ Acceso denegado (403 Forbidden) - El sitio web bloqueó el acceso automatizado. Análisis basado solo en título y descripción disponible."
-        return f"Error HTTP {e.response.status_code}: {str(e)}"
-    except requests.exceptions.Timeout:
-        return f"⚠️ Timeout - El sitio web tardó demasiado en responder. Análisis basado solo en URL."
-    except Exception as e:
-        return f"Error al extraer contenido: {str(e)}"
+    # Lista de user agents a probar
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+    ]
+    
+    for i, ua in enumerate(user_agents):
+        try:
+            headers = {
+                'User-Agent': ua,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+                'Referer': 'https://www.google.com/'
+            }
+            
+            response = requests.get(
+                url, 
+                headers=headers, 
+                timeout=timeout, 
+                allow_redirects=True,
+                verify=True
+            )
+            
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Eliminar scripts, estilos, y elementos no útiles
+            for element in soup(["script", "style", "nav", "footer", "header", "aside", "iframe"]):
+                element.decompose()
+            
+            # Intentar extraer el contenido principal
+            contenido_principal = None
+            
+            # Buscar en selectores comunes de artículos
+            for selector in ['article', 'main', '.article-content', '.post-content', '.entry-content']:
+                contenido = soup.select_one(selector)
+                if contenido:
+                    contenido_principal = contenido
+                    break
+            
+            # Si no encontramos contenido principal, usar body
+            if not contenido_principal:
+                contenido_principal = soup.find('body')
+            
+            if contenido_principal:
+                texto = contenido_principal.get_text(separator=' ', strip=True)
+            else:
+                texto = soup.get_text(separator=' ', strip=True)
+            
+            # Limpiar texto: remover espacios múltiples
+            texto = ' '.join(texto.split())
+            
+            # Limitar a 12000 caracteres para más contexto
+            if len(texto) > 100:  # Si tiene contenido útil
+                return texto[:12000]
+            else:
+                # Contenido muy corto, probar siguiente user agent
+                if i < len(user_agents) - 1:
+                    continue
+                    
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403 and i < len(user_agents) - 1:
+                # Intentar con siguiente user agent
+                continue
+            elif e.response.status_code == 403:
+                return "⚠️ ACCESO_BLOQUEADO"
+            else:
+                return f"⚠️ ERROR_HTTP_{e.response.status_code}"
+                
+        except requests.exceptions.Timeout:
+            if i < len(user_agents) - 1:
+                continue
+            return "⚠️ TIMEOUT"
+            
+        except Exception as e:
+            if i < len(user_agents) - 1:
+                continue
+            return f"⚠️ ERROR: {str(e)[:100]}"
+    
+    return "⚠️ NO_CONTENIDO"
 
 
 def analizar_con_gemini(url: str, contenido: str) -> dict:
@@ -220,16 +271,35 @@ IMPORTANTE: Sé CONCISO y PRECISO. Extrae SOLO información presente en el texto
         }
 
 
-def analizar_noticia_completa(url: str) -> dict:
+def analizar_noticia_completa(url: str, titulo_rss: str = "", descripcion_rss: str = "") -> dict:
     """
     Función principal que extrae el contenido de una URL y lo analiza con Gemini.
+    Si no puede acceder al contenido, usa el título y descripción del RSS.
+    
+    Args:
+        url: URL de la noticia
+        titulo_rss: Título extraído del feed RSS (opcional)
+        descripcion_rss: Descripción extraída del feed RSS (opcional)
     """
     contenido = extraer_contenido_web(url)
     
-    # Si hay error de extracción pero queremos analizar igual
-    if contenido.startswith("Error") or contenido.startswith("⚠️"):
-        # Analizar solo con la URL y mensaje de error
-        return analizar_con_gemini(url, f"⚠️ No se pudo acceder al contenido completo del artículo.\n\nMotivo: {contenido}\n\nPor favor, realiza un análisis basado únicamente en la URL y lo que puedas inferir de ella. Indica claramente que el análisis es limitado debido a restricciones de acceso.")
+    # Si hay error de extracción, usar título y descripción del RSS
+    if contenido.startswith("⚠️"):
+        contexto_adicional = ""
+        if titulo_rss or descripcion_rss:
+            contexto_adicional = f"\n\n📰 INFORMACIÓN DISPONIBLE DEL RSS:\nTítulo: {titulo_rss}\nDescripción: {descripcion_rss}\n"
+        
+        contenido_fallback = f"""⚠️ No se pudo acceder al contenido completo del artículo web.
+Motivo: {contenido}
+{contexto_adicional}
+INSTRUCCIONES: Analiza la noticia basándote en:
+1. La URL (puede indicar el tipo de ataque, víctima, o grupo)
+2. El título y descripción del RSS si están disponibles
+3. Infiere información técnica razonable basada en el contexto
+
+Sé lo más específico posible con la información disponible. Si algo no se puede determinar, marca como "No especificado"."""
+        
+        return analizar_con_gemini(url, contenido_fallback)
     
     resultado = analizar_con_gemini(url, contenido)
     return resultado
