@@ -156,7 +156,7 @@ Proporciona el análisis en este formato EXACTO:
 **Nivel:** [Alta/Media/Baja]
 **Razón:** [justificación breve]
 
-IMPORTANTE: Sé CONCISO y PRECISO. Extrae SOLO información presente en el texto. No inventes datos.
+IMPORTANTE: Sé CONCISO y PRECISO. Extrae SOLO información presente en el texto. No inventes datos."""
         
         response = model.generate_content(prompt)
 
