@@ -211,24 +211,62 @@ IMPORTANTE: Sé CONCISO y PRECISO. Extrae SOLO información presente en el texto
         
         response = model.generate_content(prompt)
 
-        # Extraer texto de la respuesta de forma defensiva: la SDK puede
-        # devolver diferentes estructuras (text, candidates, message, etc.).
+        # Extraer texto de la respuesta de forma defensiva
         analisis_text = None
+        finish_reason = None
+        
         try:
+            # Revisar finish_reason primero para detectar bloqueos de seguridad
+            candidates = getattr(response, "candidates", None)
+            if candidates and len(candidates) > 0:
+                finish_reason = getattr(candidates[0], "finish_reason", None)
+                
+                # finish_reason = 2 es SAFETY (contenido bloqueado por seguridad)
+                # finish_reason = 3 es RECITATION (contenido bloqueado por derechos de autor)
+                if finish_reason in [2, 3]:
+                    razon_bloqueo = "restricciones de seguridad" if finish_reason == 2 else "derechos de autor"
+                    analisis_text = f"""⚠️ **Análisis bloqueado por Gemini ({razon_bloqueo})**
+
+El contenido de esta noticia activó filtros de seguridad de Gemini y no pudo ser analizado completamente.
+
+**Información básica disponible:**
+- **URL:** {url}
+- **Título:** {titulo_rss if 'titulo_rss' in locals() else 'No disponible'}
+
+**Posibles razones del bloqueo:**
+- El contenido contiene información sensible sobre vulnerabilidades activas
+- Descripción detallada de técnicas de ataque
+- Contenido relacionado con malware activo
+
+**Recomendación:** Revisa manualmente la noticia en la URL original para obtener detalles completos."""
+                    
+                    return {
+                        "success": True,
+                        "analisis": analisis_text,
+                        "url": url,
+                        "_blocked": True
+                    }
+            
             # Intento directo (accesor rápido)
             analisis_text = getattr(response, "text", None)
 
             # Revisar candidatos si no hay .text
-            if not analisis_text:
-                candidates = getattr(response, "candidates", None)
-                if candidates:
-                    cand = candidates[0]
-                    analisis_text = getattr(cand, "text", None) or getattr(cand, "content", None) or getattr(cand, "output", None) or None
+            if not analisis_text and candidates:
+                cand = candidates[0]
+                # Intentar extraer contenido de diferentes atributos
+                content = getattr(cand, "content", None)
+                if content:
+                    # content puede ser un objeto con 'parts'
+                    parts = getattr(content, "parts", None)
+                    if parts and len(parts) > 0:
+                        analisis_text = getattr(parts[0], "text", None)
+                
+                if not analisis_text:
+                    analisis_text = getattr(cand, "text", None) or getattr(cand, "output", None)
 
-            # Revisar message / content
+            # Revisar message / content alternativo
             if not analisis_text and hasattr(response, "message"):
                 msg = getattr(response, "message")
-                # Puede ser dict con 'content' como lista de partes
                 if isinstance(msg, dict):
                     content = msg.get("content")
                     if isinstance(content, list) and len(content) > 0:
@@ -238,18 +276,39 @@ IMPORTANTE: Sé CONCISO y PRECISO. Extrae SOLO información presente en el texto
                                 if analisis_text:
                                     break
                 else:
-                    # Fallback a str
                     analisis_text = str(msg)
 
-            # Último recurso: serializar el objeto respuesta
+            # Si aún no hay texto, dar mensaje informativo
             if not analisis_text:
-                try:
-                    analisis_text = str(response)
-                except Exception:
-                    analisis_text = "(no se pudo extraer texto de la respuesta)"
+                analisis_text = f"""⚠️ **No se pudo extraer respuesta de Gemini**
+
+La API de Gemini respondió pero no devolvió contenido analizable.
+
+**Finish reason:** {finish_reason if finish_reason else 'Desconocido'}
+
+**Información disponible:**
+- **URL:** {url}
+
+**Acción sugerida:** Intenta el análisis nuevamente en unos minutos."""
 
         except Exception as e:
-            analisis_text = f"Error extrayendo texto de la respuesta de Gemini: {str(e)}"
+            error_msg = str(e)
+            if "finish_reason is 2" in error_msg or "SAFETY" in error_msg:
+                analisis_text = f"""⚠️ **Contenido bloqueado por filtros de seguridad de Gemini**
+
+La noticia contiene información que activó los filtros de seguridad de Gemini.
+
+**URL:** {url}
+
+**Recomendación:** Revisa la noticia manualmente en el navegador."""
+            else:
+                analisis_text = f"""⚠️ **Error al procesar respuesta de Gemini**
+
+Detalles técnicos: {error_msg[:200]}
+
+**URL:** {url}
+
+Intenta nuevamente o revisa la noticia manualmente."""
 
         # Limitar tamaño de la respuesta devuelta al front-end
         if isinstance(analisis_text, str) and len(analisis_text) > 20000:
