@@ -349,21 +349,21 @@ def analizar_noticia_completa(url: str, titulo_rss: str = "", descripcion_rss: s
     
     # Si hay error de extracción, usar título y descripción del RSS
     if contenido.startswith("⚠️"):
-        contexto_adicional = ""
         if titulo_rss or descripcion_rss:
-            contexto_adicional = f"\n\n📰 INFORMACIÓN DISPONIBLE DEL RSS:\nTítulo: {titulo_rss}\nDescripción: {descripcion_rss}\n"
-        
-        contenido_fallback = f"""⚠️ No se pudo acceder al contenido completo del artículo web.
-Motivo: {contenido}
-{contexto_adicional}
-INSTRUCCIONES: Analiza la noticia basándote en:
-1. La URL (puede indicar el tipo de ataque, víctima, o grupo)
-2. El título y descripción del RSS si están disponibles
-3. Infiere información técnica razonable basada en el contexto
+            # Usar el título y descripción del RSS como contenido
+            contenido_fallback = f"""Título de la noticia: {titulo_rss}
 
-Sé lo más específico posible con la información disponible. Si algo no se puede determinar, marca como "No especificado"."""
-        
-        return analizar_con_gemini(url, contenido_fallback)
+Descripción/Resumen: {descripcion_rss}
+
+URL: {url}
+
+Nota: No se pudo acceder al contenido completo del artículo ({contenido}), pero usa el título y la URL para inferir información."""
+            
+            return analizar_con_gemini(url, contenido_fallback)
+        else:
+            # Si tampoco hay título/descripción del RSS, solo analizar la URL
+            return analizar_con_gemini(url, f"URL: {url}\n\nNota: Solo se tiene la URL disponible. Infiere lo que puedas del nombre del sitio y estructura de la URL.")
     
+    # Si se pudo extraer contenido, usarlo normalmente
     resultado = analizar_con_gemini(url, contenido)
     return resultado

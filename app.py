@@ -94,10 +94,11 @@ if st.session_state.page == "detalle" and st.session_state.selected_event is not
         if st.button("🚀 Ejecutar Análisis Completo", type="primary", use_container_width=True):
             if pd.notna(evento["url"]) and str(evento["url"]).strip():
                 with st.spinner("🔄 Analizando con Gemini AI..."):
-                    # Pasar título e indicador para mejorar análisis cuando no pueda acceder al contenido
-                    titulo = str(evento.get("actor", "")) if pd.notna(evento.get("actor")) else ""
-                    descripcion = str(evento.get("indicador", "")) if pd.notna(evento.get("indicador")) else ""
-                    resultado = analizar_noticia_completa(evento["url"], titulo, descripcion)
+                    # Pasar título (indicador) y actor para mejorar análisis cuando no pueda acceder al contenido
+                    titulo = str(evento.get("indicador", "")) if pd.notna(evento.get("indicador")) else ""
+                    actor = str(evento.get("actor", "")) if pd.notna(evento.get("actor")) else ""
+                    descripcion_completa = f"Grupo: {actor}. {titulo}" if actor and actor != "Desconocido" else titulo
+                    resultado = analizar_noticia_completa(evento["url"], titulo, descripcion_completa)
                 
                 if resultado["success"]:
                     st.session_state[evento_id] = resultado["analisis"]
