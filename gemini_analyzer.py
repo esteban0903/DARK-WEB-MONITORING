@@ -131,9 +131,12 @@ def analizar_con_gemini(url: str, contenido: str) -> dict:
             }
         )
         
-        prompt = f"""Eres un analista experto en ciberseguridad especializado en ransomware y ataques APT.
+        prompt = f"""Eres un analista experto en ciberseguridad. Analiza esta noticia de ransomware y EXTRAE TODA LA INFORMACIÓN POSIBLE.
 
-Analiza el siguiente contenido y extrae SOLO la información que esté EXPLÍCITAMENTE mencionada. Si un dato NO aparece en el texto, escribe "No especificado".
+INSTRUCCIONES CRÍTICAS:
+1. Si un dato está en el texto, EXTRÁELO
+2. Si puedes INFERIR algo razonablemente del contexto, HAZLO (marca como "Inferido:")
+3. SOLO si realmente no hay NADA, escribe "No disponible"
 
 URL: {url}
 
@@ -142,72 +145,74 @@ CONTENIDO:
 
 ---
 
-Proporciona el análisis en este formato EXACTO:
+COMPLETA ESTE ANÁLISIS:
 
-## 📰 INFORMACIÓN DE LA FUENTE
-**Autor/Medio:** [nombre del medio]
-**Fecha:** [fecha de publicación]
+## 📰 FUENTE
+**Autor/Medio:** [Busca el nombre del sitio web en la URL o en el texto. Si dice "BleepingComputer" o "The Hacker News", úsalo]
+**Fecha:** [Busca cualquier fecha mencionada: "October 2024", "2 days ago", etc.]
 
-## 🎭 ACTOR DE AMENAZA
-**Nombre:** [grupo ransomware identificado: LockBit, BlackCat, RansomHub, etc.]
-**Nivel de sofisticación:** [Bajo/Medio/Alto/Muy Alto]
+## 🎭 ATACANTE
+**Nombre del grupo:** [Busca nombres como: LockBit, BlackCat, ALPHV, Akira, Play, Royal, RansomHub, Medusa, 8Base, Qilin, BianLian, Clop, Conti, etc. Si no hay nombre pero dice "ransomware gang" o "threat actors", escribe "Grupo no identificado"]
+**Sofisticación:** [Si menciona táctica avanzada=Alto, si es ataque común=Medio, si no dice=Medio]
 
 ## 🎯 VÍCTIMA
-**Organización:** [nombre de la empresa/entidad afectada]
-**Sector:** [industria: salud, finanzas, tecnología, gobierno, etc.]
-**País:** [ubicación]
-**Tamaño:** [Pequeña/Mediana/Grande empresa]
+**Organización:** [BUSCA NOMBRES DE EMPRESAS EN MAYÚSCULAS o con Ltd/Inc/Corp/GmbH. Pueden estar en el título. Si dice "major hospital" sin nombre="Hospital no identificado"]
+**Sector:** [Si es hospital=salud, si es banco=finanzas, si es gobierno=gobierno, si dice "tech company"=tecnología, si dice "manufacturer"=manufactura. INFIERE del contexto]
+**País:** [Busca nombres de países, ciudades, o dominios (.uk=Reino Unido, .de=Alemania, etc.)]
+**Tamaño:** [Si dice "major"=Grande, "small"=Pequeña, "mid-size"=Mediana, si no especifica=Mediana]
 
 ## 🔴 CRITICIDAD
-**Nivel:** [🔴 CRÍTICO / 🟠 ALTO / 🟡 MEDIO / 🟢 BAJO]
-**Justificación:** [1-2 líneas explicando por qué]
+**Nivel:** [Si es hospital/gobierno/infraestructura crítica=🔴 CRÍTICO, si menciona millones de datos=🟠 ALTO, si es empresa pequeña=🟡 MEDIO]
+**Justificación:** [Explica por qué según sector y datos comprometidos]
 
 **Impacto:**
-- Datos comprometidos: [tipo y cantidad si se menciona]
-- Sistemas afectados: [descripción breve]
-- Rescate demandado: [monto si se conoce]
+- Datos comprometidos: [Busca: "X GB", "Y million records", "patient data", "financial records", etc.]
+- Sistemas afectados: [Busca: "servers", "network", "database", "backup", etc.]
+- Rescate: [Busca: "$X million", "ransom demand", etc.]
 
 ## 🛠️ MODUS OPERANDI
-**Vector inicial:** [phishing/vulnerabilidad/RDP/VPN/otro]
+**Vector inicial:** [Si menciona email=phishing, si dice vulnerability/CVE=vulnerabilidad, si dice RDP/remote=RDP, si no especifica="Inferido: Probablemente phishing o vulnerabilidad"]
 
-**Técnicas MITRE ATT&CK detectadas:**
-- Initial Access: [técnica]
-- Execution: [técnica]
-- Persistence: [técnica]
-- Lateral Movement: [técnica]
-- Exfiltration: [técnica]
-- Impact: [técnica]
+**Técnicas MITRE:**
+- Initial Access: [Si hay phishing=T1566, si vulnerabilidad=T1190, sino="Técnica no especificada"]
+- Execution: [Si menciona scripts/malware=especificarlo, sino="No especificado"]
+- Lateral Movement: [Si menciona red interna="Movimiento lateral detectado", sino="No especificado"]
+- Impact: [SIEMPRE poner "T1486 Data Encrypted for Impact" porque es ransomware]
 
-**Descripción del ataque:** [2-3 líneas describiendo la secuencia del ataque]
+**Descripción:** [Resume en 2-3 líneas QUÉ PASÓ según el artículo]
 
-## 🔍 INDICADORES DE COMPROMISO (IoCs)
-**IPs sospechosas:** [lista o "No especificado"]
-**Dominios maliciosos:** [lista o "No especificado"]
-**Hashes de malware:** [MD5/SHA-256 o "No especificado"]
-**Archivos maliciosos:** [nombres o "No especificado"]
-**Otros IoCs:** [puertos/procesos/registry keys o "No especificado"]
+## 🔍 IOCs
+**IPs:** [Busca números tipo 192.168.x.x o menciones de "IP address"]
+**Dominios:** [Busca URLs .com/.net o menciones de C2]
+**Hashes:** [Busca códigos MD5/SHA256 largos]
+**Archivos:** [Busca menciones de .exe/.dll/.bat]
+**Otros:** [Cualquier indicador técnico mencionado]
 
 ## 🛡️ MITIGACIÓN
 **Acciones inmediatas:**
-1. [acción prioritaria]
-2. [acción recomendada]
-3. [acción preventiva]
+1. Aislar sistemas afectados y desconectar de la red
+2. [Acción específica según el ataque]
+3. Contactar equipo de respuesta a incidentes
 
-**Parches necesarios:** [CVE específico o "No especificado"]
+**Parches:** [Si menciona CVE, especificarlo]
 
-**Controles recomendados:**
-- Detección: [reglas SIEM/IDS]
-- Prevención: [configuraciones firewall/segmentación]
-- Respuesta: [procedimiento de IR]
+**Controles:**
+- Detección: Monitorear tráfico anómalo y cifrado de archivos
+- Prevención: [Específico según vector de ataque]
+- Respuesta: Activar plan de recuperación y backups
 
-## 📊 RESUMEN EJECUTIVO
-[2-3 líneas: qué pasó, quién fue afectado, gravedad, acción requerida]
+## 📊 RESUMEN
+[En 2-3 líneas: "El grupo [ATACANTE] atacó a [VÍCTIMA] mediante [VECTOR] comprometiendo [DATOS/SISTEMAS]. Nivel de gravedad [NIVEL] debido a [RAZÓN]."]
 
 ## ⚠️ CONFIABILIDAD
-**Nivel:** [Alta/Media/Baja]
-**Razón:** [justificación breve]
+**Nivel:** [Alta si es fuente reconocida + detalles técnicos, Media si falta info, Baja si es rumor]
+**Razón:** [Por qué]
 
-IMPORTANTE: Sé CONCISO y PRECISO. Extrae SOLO información presente en el texto. No inventes datos."""
+REGLAS:
+- NO dejes TODO en "No especificado" - BUSCA ACTIVAMENTE en el texto
+- USA el título y URL para inferir información si el contenido es limitado
+- Si es ransomware, SIEMPRE hay al menos: grupo O víctima O sector
+- Sé inteligente: si dice "healthcare provider" = salud, "financial institution" = finanzas"""
         
         response = model.generate_content(prompt)
 

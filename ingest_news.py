@@ -109,14 +109,33 @@ REPUTABLE_DOMAINS = {
     "wired.com": "alta",
 }
 
-TERMINOS_ACTORES = ["lockbit", "qilin", "blackcat"]
+TERMINOS_ACTORES = [
+    # Grupos muy activos 2024-2025
+    "lockbit", "blackcat", "alphv", "akira", "play", "royal", "ransomhub", 
+    "medusa", "8base", "qilin", "bianlian", "black basta", "blackbasta",
+    "clop", "cl0p", "rhysida", "noberus", "cactus", "trigona",
+    
+    # Grupos establecidos
+    "conti", "revil", "darkside", "hive", "ragnar locker", "ragnarlocker",
+    "cuba", "vice society", "karakurt", "lorenz", "snatch",
+    
+    # Grupos emergentes
+    "hunters international", "rancoz", "meow", "monti", "stormous",
+    "daixin", "royal", "malaslocker", "mars stealer", "avoslocker",
+    
+    # Variantes y alias
+    "lockbit 3.0", "lockbit black", "blackcat 2.0", "alphv-ng"
+]
 
 # Palabras clave que indican que es un ataque real o filtración
 PALABRAS_CLAVE_ATAQUE = [
     "attack", "breach", "victim", "infected", "encrypted", "ransomware",
     "leaked", "stolen", "compromised", "hacked", "infiltrated", "exfiltrated",
-    "data dump", "dark web", "threat actor", "malware", "exploit",
-    "atacó", "víctima", "filtración", "comprometido", "hackeado", "robo de datos"
+    "data dump", "dark web", "threat actor", "malware", "exploit", "cybercrime",
+    "attacked", "breached", "hacker", "gang", "group", "campaign", "incident",
+    "vulnerability", "zero-day", "CVE", "security", "cyber",
+    "atacó", "víctima", "filtración", "comprometido", "hackeado", "robo de datos",
+    "ataque", "ciberataque", "cibercriminal"
 ]
 
 HEADER = ["fecha", "actor", "fuente", "tipo", "indicador", "url", "confianza", "threat_intel"]
@@ -142,6 +161,7 @@ def resolver_url_real(url: str, timeout: int = 10) -> str:
 def es_noticia_relevante(texto: str) -> bool:
     """
     Verifica si la noticia es realmente sobre un ataque o filtración de ransomware.
+    Requiere al menos 2 palabras clave para filtrar noticias genéricas.
     """
     texto_lower = texto.lower()
     # Debe contener al menos 2 palabras clave de ataque
@@ -170,10 +190,53 @@ def normalize_date(entry) -> str:
 
 
 def detect_actor(text: str) -> str:
+    """
+    Detecta el grupo de ransomware mencionado en el texto.
+    Busca coincidencias parciales y maneja alias.
+    """
     t = (text or "").lower()
-    for a in TERMINOS_ACTORES:
-        if a in t:
-            return a.capitalize()
+    
+    # Buscar coincidencias con los grupos conocidos
+    for actor in TERMINOS_ACTORES:
+        if actor in t:
+            # Capitalizar correctamente nombres conocidos
+            if "lockbit" in actor:
+                return "LockBit"
+            elif "blackcat" in actor or "alphv" in actor:
+                return "BlackCat/ALPHV"
+            elif "akira" in actor:
+                return "Akira"
+            elif "play" in actor and ("play ransomware" in t or "play gang" in t):
+                return "Play"
+            elif "royal" in actor:
+                return "Royal"
+            elif "ransomhub" in actor:
+                return "RansomHub"
+            elif "medusa" in actor:
+                return "Medusa"
+            elif "8base" in actor:
+                return "8Base"
+            elif "qilin" in actor:
+                return "Qilin"
+            elif "bianlian" in actor:
+                return "BianLian"
+            elif "black basta" in actor or "blackbasta" in actor:
+                return "Black Basta"
+            elif "clop" in actor or "cl0p" in actor:
+                return "Clop"
+            elif "rhysida" in actor:
+                return "Rhysida"
+            elif "cactus" in actor:
+                return "Cactus"
+            elif "conti" in actor:
+                return "Conti"
+            elif "hive" in actor:
+                return "Hive"
+            elif "ragnar" in actor:
+                return "Ragnar Locker"
+            else:
+                return actor.title()
+    
     return "Desconocido"
 
 
