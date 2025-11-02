@@ -122,12 +122,13 @@ def analizar_con_gemini(url: str, contenido: str) -> dict:
     Analiza el contenido de una noticia usando Gemini y extrae información estructurada.
     """
     try:
-        # Usar Gemini 1.5 Pro - mejor razonamiento y menos restrictivo que 2.5 Flash
+        # Usar Gemini 2.0 Flash Experimental - más rápido y menos restrictivo
+        # Alternativa: 'gemini-1.5-pro-002' si 2.0 no está disponible
         model = genai.GenerativeModel(
-            'gemini-1.5-pro',
+            'gemini-2.0-flash-exp',
             generation_config={
                 'temperature': 0.3,
-                'max_output_tokens': 4096,  # Más tokens para análisis completos
+                'max_output_tokens': 4096,
             },
             safety_settings={
                 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE',
